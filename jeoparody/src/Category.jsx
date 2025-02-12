@@ -19,3 +19,4 @@ const Category = ({ category, categoryIndex, onQuestionClick }) => {
       </div>
     );
   };
+  export default Category;

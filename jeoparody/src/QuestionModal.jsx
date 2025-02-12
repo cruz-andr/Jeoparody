@@ -37,3 +37,5 @@ const QuestionModal = ({ question, onClose, onAnswer }) => {
     );
   };
   
+  export default QuestionModal;
+  

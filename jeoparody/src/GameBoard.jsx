@@ -1,7 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+import { apiService } from './services/api';
+import { soundService } from './services/soundService';
 import Category from './Category';
+import QuestionModal from './QuestionModal';
 
 const GameBoard = () => {
+  const { gameId } = useParams();
   const [gameState, setGameState] = useState({
     categories: [
       {
@@ -14,15 +19,46 @@ const GameBoard = () => {
           { value: 1000, question: 'Sample Question 5', answer: 'Sample Answer 5', isAnswered: false },
         ],
       },
-      //add more later
     ],
     currentScore: 0,
     currentQuestion: null,
   });
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const handleQuestionClick = (categoryIndex, questionIndex) => {
+  useEffect(() => {
+    if (gameId !== 'demo') {
+      loadGame();
+    } else {
+      setLoading(false);
+    }
+  }, [gameId]);
+
+  const loadGame = async () => {
+    try {
+      const data = await apiService.getGame(gameId);
+      if (data.error) {
+        setError(data.error);
+      } else {
+        setGameState(data);
+      }
+    } catch (err) {
+      console.error('Failed to load game:', err);
+      setError('Failed to load game');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleQuestionClick = async (categoryIndex, questionIndex) => {
     const question = gameState.categories[categoryIndex].questions[questionIndex];
     if (!question.isAnswered) {
+      if (question.isDailyDouble) {
+        soundService.play('dailyDouble');
+      } else {
+        soundService.play('questionReveal');
+      }
+
       setGameState(prev => ({
         ...prev,
         currentQuestion: {
@@ -33,6 +69,43 @@ const GameBoard = () => {
       }));
     }
   };
+
+  const handleAnswerSubmit = async (isCorrect) => {
+    const pointValue = gameState.currentQuestion.isDailyDouble 
+      ? gameState.wager 
+      : gameState.currentQuestion.value;
+      
+    const newScore = isCorrect ? 
+      gameState.currentScore + pointValue : 
+      gameState.currentScore - pointValue;
+
+    soundService.play(isCorrect ? 'correctAnswer' : 'wrongAnswer');
+
+    const updatedGameState = {
+      ...gameState,
+      currentScore: newScore,
+      currentQuestion: null,
+      categories: gameState.categories.map((cat, catIdx) =>
+        catIdx === gameState.currentQuestion.categoryIndex
+          ? {
+              ...cat,
+              questions: cat.questions.map((q, qIdx) =>
+                qIdx === gameState.currentQuestion.questionIndex
+                  ? { ...q, isAnswered: true }
+                  : q
+              ),
+            }
+          : cat
+      ),
+    };
+
+    setGameState(updatedGameState);
+    await apiService.updateGame(gameId, updatedGameState);
+  };
+
+  if (loading) return <div className="text-center mt-8">Loading...</div>;
+  if (error) return <div className="text-center mt-8 text-red-500">{error}</div>;
+  if (!gameState) return null;
 
   return (
     <div className="w-full max-w-7xl mx-auto p-4">
@@ -51,30 +124,7 @@ const GameBoard = () => {
         <QuestionModal
           question={gameState.currentQuestion}
           onClose={() => setGameState(prev => ({ ...prev, currentQuestion: null }))}
-          onAnswer={(isCorrect) => {
-            const pointValue = gameState.currentQuestion.value;
-            const newScore = isCorrect ? 
-              gameState.currentScore + pointValue : 
-              gameState.currentScore - pointValue;
-
-            setGameState(prev => ({
-              ...prev,
-              currentScore: newScore,
-              currentQuestion: null,
-              categories: prev.categories.map((cat, catIdx) =>
-                catIdx === prev.currentQuestion.categoryIndex
-                  ? {
-                      ...cat,
-                      questions: cat.questions.map((q, qIdx) =>
-                        qIdx === prev.currentQuestion.questionIndex
-                          ? { ...q, isAnswered: true }
-                          : q
-                      ),
-                    }
-                  : cat
-              ),
-            }));
-          }}
+          onAnswer={handleAnswerSubmit}
         />
       )}
       <div className="mt-8 text-center">
@@ -83,4 +133,5 @@ const GameBoard = () => {
     </div>
   );
 };
+
 export default GameBoard;
